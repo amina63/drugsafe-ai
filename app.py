@@ -3,6 +3,7 @@ import pandas as pd
 import joblib
 import os
 import base64
+import pycountry
 
 # ==================================
 # BASE_DIR (doit être en premier)
@@ -87,6 +88,35 @@ qualification_map = {
 }
 
 # ==================================
+# Correspondance code pays -> nom complet
+# ==================================
+
+@st.cache_data
+def get_country_name_map(codes):
+    """
+    Construit un dict {code_original: nom_complet} à partir
+    des codes ISO alpha-2 (ex: 'FR' -> 'France').
+    Si un code n'est pas reconnu, on garde le code tel quel.
+    """
+    mapping = {}
+    for code in codes:
+        try:
+            country_obj = pycountry.countries.get(alpha_2=str(code).upper())
+            mapping[code] = country_obj.name if country_obj else str(code)
+        except Exception:
+            mapping[code] = str(code)
+    return mapping
+
+country_codes = sorted(country_encoder.classes_)
+country_name_map = get_country_name_map(country_codes)
+
+# Inverse : nom complet -> code original (pour retrouver le code après sélection)
+country_label_to_code = {v: k for k, v in country_name_map.items()}
+
+# Liste triée des noms complets pour le selectbox
+country_labels = sorted(country_name_map.values())
+
+# ==================================
 # Logo + Titre (centré via HTML)
 # ==================================
 
@@ -158,9 +188,9 @@ with st.container(border=True):
         placeholder="Rechercher une réaction..."
     )
 
-    country = st.selectbox(
+    country_label = st.selectbox(
         "Pays",
-        sorted(country_encoder.classes_),
+        country_labels,
         index=None,
         placeholder="Rechercher un pays..."
     )
@@ -177,10 +207,14 @@ with st.container(border=True):
 
 if predict_btn:
 
-    if drug is None or reaction is None or country is None:
+    if drug is None or reaction is None or country_label is None:
         st.warning("Veuillez compléter tous les champs.")
 
     else:
+
+        # On reconvertit le nom complet choisi en code original
+        # car c'est ce code que le country_encoder connaît
+        country = country_label_to_code[country_label]
 
         drug_encoded          = drug_encoder.transform([drug])[0]
         reaction_encoded      = reaction_encoder.transform([reaction])[0]
@@ -236,7 +270,7 @@ if predict_btn:
 
             summary = pd.DataFrame({
                 "Champ": ["Sexe","Âge","Médicament","Réaction","Pays","Qualification"],
-                "Valeur": [sexe, age, drug, reaction, country, qualification]
+                "Valeur": [sexe, age, drug, reaction, country_label, qualification]
             })
 
             st.dataframe(summary, hide_index=True, use_container_width=True)
